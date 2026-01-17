@@ -1,233 +1,211 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
-<meta charset="utf-8" />
-<title>My Travel Map (Final Fixed)</title>
-<style>
-  /* 1. 絕對滿版設定 */
-  html, body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background-color: #E1F5FE; /* 海洋底色 */
-  }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Travel Map</title>
+    <style>
+        /* 移除邊距，確保地圖滿版 */
+        body { margin: 0; padding: 0; background-color: #E1F5FE; overflow: hidden; }
+        #chartdiv { width: 100%; height: 100vh; }
+    </style>
+</head>
+<body>
 
-  /* 2. 圖表容器 */
-  #chartdiv {
-    width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
-  }
-
-  /* 3. 左上角訊息視窗 */
-  #debug-console {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #00ff00;
-    font-family: monospace, sans-serif;
-    font-size: 14px;
-    padding: 10px 15px;
-    border-radius: 5px;
-    z-index: 9999;
-    pointer-events: none;
-    max-width: 300px;
-    transition: opacity 0.5s;
-  }
-</style>
+<div id="chartdiv"></div>
 
 <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
 <script src="https://cdn.amcharts.com/lib/5/map.js"></script>
 <script src="https://cdn.amcharts.com/lib/5/geodata/worldHigh.js"></script>
 <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
 
-</head>
-<body>
-
-<div id="debug-console">系統啟動中...</div>
-<div id="chartdiv"></div>
-
 <script>
-  // === 訊息顯示工具 ===
-  const debugDiv = document.getElementById('debug-console');
-  
-  function showStatus(msg) {
-    debugDiv.innerHTML = "SYSTEM > " + msg;
-    debugDiv.style.color = "#00ff00";
-  }
-  
-  function showError(msg) {
-    debugDiv.innerHTML = "[ERROR] > " + msg;
-    debugDiv.style.color = "#ff4444";
-    debugDiv.style.backgroundColor = "rgba(50, 0, 0, 0.9)";
-  }
+am5.ready(function() {
 
-  am5.ready(function() {
-    showStatus("載入 amCharts 核心...");
-
-    // ==========================================
-    // 設定區
-    // ==========================================
+    // =========================================================
+    // 1. 設定區 (Configuration)
+    // =========================================================
+    
+    // ★ 請將此處換成您的 Google Sheet CSV 連結
+    // 格式要求：第一欄為 Country_Code (如 TW, JP), 第二欄為 Notion_Link
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTfNBKFYRbs8r4NoYBSFFrx7K87vdvlhXcmQcnR9PbZED4BSyYadZENz4fPU4e4bes5JyTQRfrctWKD/pub?gid=0&single=true&output=csv";
-    const HOME_ID = "TW";
-    
-    // 初始位置
-    const INITIAL_LONGITUDE = 120.9;
-    const INITIAL_LATITUDE = 23.6;
 
-    // 1. 建立 Root
-    var root = am5.Root.new("chartdiv");
-    root.setThemes([am5themes_Animated.new(root)]);
+    // 設定您的居住地代碼 (顯示為黃/橙色)
+    const HOME_ID = "TW"; 
 
-    // 2. 建立地圖
-    showStatus("建立地圖物件 (High Res)...");
-    
-    var chart = root.container.children.push(am5map.MapChart.new(root, {
-      panX: "rotateX",       
-      panY: "translateY",    
-      minZoomLevel: 1,       
-      maxZoomLevel: 64,
-      
-      homeGeoPoint: { latitude: INITIAL_LATITUDE, longitude: INITIAL_LONGITUDE },
-      homeZoomLevel: 1,
-
-      paddingLeft: 0, paddingRight: 0, paddingTop: 0, paddingBottom: 0
-    }));
-
-    // 3. 建立多邊形 (使用 worldHigh)
-    var polygonSeries = chart.series.push(am5map.MapPolygonSeries.new(root, {
-      geoJSON: am5geodata_worldHigh, 
-      exclude: ["AQ"] 
-    }));
-
-    // 4. 顏色定義
+    // 配色設定
     const colors = {
-      unvisited: { fill: am5.color(0xD1D1D1), hover: am5.color(0xA9A9A9) }, 
-      visited:   { fill: am5.color(0xC8E6C9), hover: am5.color(0x66BB6A) }, 
-      home:      { fill: am5.color(0xFFC107), hover: am5.color(0xFF8F00) }  
+        // 海洋：改為極淺藍色 (Light Blue 50)
+        ocean: am5.color(0xE1F5FE), 
+
+        // 居住地 (台灣)
+        home: {
+            normal: am5.color(0xFF9800), // 亮橙
+            hover:  am5.color(0xE65100)  // 深橙
+        },
+
+        // 去過的國家
+        visited: {
+            normal: am5.color(0x66DD00), // 鮮綠
+            hover:  am5.color(0x1B5E20)  // 深綠
+        },
+
+        // 沒去過的國家
+        unvisited: {
+            normal: am5.color(0xD9D9D9), // 淺灰
+            hover:  am5.color(0x757575)  // 深灰
+        }
     };
 
-    // 5. 設定樣式
-    polygonSeries.mapPolygons.template.setAll({
-      tooltipText: "{name}",
-      // [關鍵修正] 移除了 toggleKey: "active"
-      // 這會防止點擊後國家變成「選取狀態」而導致卡住
-      interactive: true,
-      fill: colors.unvisited.fill, 
-      stroke: am5.color(0xffffff),
-      strokeWidth: 0.5,
-      templateField: "polygonSettings"
-    });
+    // =========================================================
+    // 2. 建立地圖 (Map Setup)
+    // =========================================================
+    var root = am5.Root.new("chartdiv");
+    root.setThemes([ am5themes_Animated.new(root) ]);
 
-    // 顏色 Adapter
-    polygonSeries.mapPolygons.template.adapters.add("fill", function(fill, target) {
-      if (target.dataItem && target.dataItem.dataContext) {
-        if (target.isHover()) {
-          return target.dataItem.dataContext.hoverColor || colors.unvisited.hover;
-        }
-        return target.dataItem.dataContext.fill || fill;
-      }
-      return fill;
-    });
-
-    // 游標 Adapter：只有「有網址」的國家才顯示手指游標
-    polygonSeries.mapPolygons.template.adapters.add("cursorOverStyle", function(style, target) {
-      return target.dataItem.dataContext.url ? "pointer" : "default";
-    });
-
-    // 點擊事件
-    polygonSeries.mapPolygons.template.events.on("click", function(ev) {
-      var data = ev.target.dataItem.dataContext;
-      
-      // [關鍵修正] 嚴格判斷
-      // 如果沒有 url，直接 return (結束)，什麼都不做，防止任何縮放或卡住
-      if (!data.url || data.url.trim() === "") {
-        return; 
-      }
-
-      // 只有有網址才會執行到這裡
-      window.open(data.url, '_blank');
-    });
-
-    // 6. 資料讀取
-    async function loadMapData() {
-      showStatus("正在連線 Google Sheets...");
-      
-      let mapData = [];
-      mapData.push({ id: HOME_ID, fill: colors.home.fill, hoverColor: colors.home.hover });
-      polygonSeries.data.setAll(mapData);
-
-      try {
-        const response = await fetch(CSV_URL);
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        
-        showStatus("資料下載成功，解析中...");
-        const csvText = await response.text();
-        const rows = csvText.split(/\r?\n/).slice(1);
-        
-        rows.forEach(row => {
-          const cols = row.split(",");
-          if (cols.length >= 1) {
-            const cid = cols[0].trim();
-            const url = cols[1] ? cols[1].trim() : "";
-            if (cid && cid !== HOME_ID) {
-              mapData.push({
-                id: cid,
-                fill: colors.visited.fill,
-                hoverColor: colors.visited.hover,
-                url: url
-              });
-            }
-          }
-        });
-        
-        polygonSeries.data.setAll(mapData);
-        showStatus("✅ 地圖準備完成！");
-        
-        setTimeout(() => {
-          debugDiv.style.opacity = "0";
-        }, 3000);
-
-      } catch (e) {
-        console.error(e);
-        if (window.location.protocol === 'file:') {
-          showError("讀取失敗：請勿直接開啟檔案 (file://)，請使用 Live Server。");
-        } else {
-          showError("資料讀取失敗：" + e.message);
-        }
-      }
-    }
-
-    loadMapData();
-
-    // 7. 控制項
-    var zoomControl = chart.set("zoomControl", am5map.ZoomControl.new(root, {}));
-    
-    // 重置按鈕
-    var homeButton = chart.children.push(am5.Button.new(root, {
-      paddingTop: 10, paddingBottom: 10, x: am5.p100, y: 0, centerX: am5.p100, dx: -20, dy: 20,
-      label: am5.Label.new(root, { 
-        text: "↺ 回到初始狀態", 
-        fill: am5.color(0xffffff),
-        fontSize: 14,
-        fontWeight: "bold"
-      }),
-      background: am5.RoundedRectangle.new(root, { fill: am5.color(0x546E7A), fillOpacity: 0.8 }),
-      cursorOverStyle: "pointer"
+    var chart = root.container.children.push(am5map.MapChart.new(root, {
+        panX: "rotateX", // 允許左右無限捲動
+        panY: "translateY",
+        projection: am5map.geoMercator(), // 平面地圖投影
+        minZoomLevel: 1,
+        maxZoomLevel: 32,
     }));
-    
-    // 重置功能 (Reload)
-    homeButton.events.on("click", function() {
-      showStatus("正在重新載入...");
-      window.location.reload();
+
+    // 設定背景顏色 (海洋)
+    chart.chartContainer.set("background", am5.Rectangle.new(root, {
+        fill: colors.ocean,
+        fillOpacity: 1
+    }));
+
+    // =========================================================
+    // 3. 國家圖層 (Land Series)
+    // =========================================================
+    var polygonSeries = chart.series.push(am5map.MapPolygonSeries.new(root, {
+        geoJSON: am5geodata_worldHigh,
+        exclude: ["AQ"] // 排除南極洲
+    }));
+
+    // 設定預設樣式 (對應 "未去過")
+    polygonSeries.mapPolygons.template.setAll({
+        tooltipText: "{name}",
+        toggleKey: "active",
+        interactive: true,
+        fill: colors.unvisited.normal,    
+        stroke: am5.color(0xffffff),      
+        strokeWidth: 0.5
     });
 
-  });
+    // 建立 Hover 狀態
+    polygonSeries.mapPolygons.template.states.create("hover", {
+        fill: colors.unvisited.hover      
+    });
+
+    // =========================================================
+    // 4. 智慧填色邏輯 (Adapter)
+    // =========================================================
+    polygonSeries.mapPolygons.template.adapters.add("fill", function(fill, target) {
+        
+        // 從資料中取得狀態 (home / visited / unvisited)
+        var status = "unvisited"; 
+        if (target.dataItem && target.dataItem.dataContext && target.dataItem.dataContext.status) {
+            status = target.dataItem.dataContext.status;
+        }
+
+        if (target.isHover()) {
+            // --- Hover 狀態 ---
+            if (status === "home")    return colors.home.hover;    
+            if (status === "visited") return colors.visited.hover; 
+            return colors.unvisited.hover;                         
+        } else {
+            // --- 一般狀態 ---
+            if (status === "home")    return colors.home.normal;    
+            if (status === "visited") return colors.visited.normal; 
+            return colors.unvisited.normal;                         
+        }
+    });
+
+    // 點擊事件：開啟 Notion 連結
+    polygonSeries.mapPolygons.template.events.on("click", function(ev) {
+        var data = ev.target.dataItem.dataContext;
+        if (data.url && data.url.trim() !== "") {
+            window.open(data.url, "_blank");
+        }
+    });
+
+    // =========================================================
+    // 5. 讀取 Google Sheets CSV 資料
+    // =========================================================
+    // 使用 fetch 抓取資料
+    fetch(CSV_URL)
+        .then(response => response.text())
+        .then(csvText => {
+            // 解析 CSV
+            // 假設第一列是標題，從第二列開始讀取 (slice(1))
+            // 如果您的 CSV 沒有標題列，請移除 .slice(1)
+            var rows = csvText.split(/\r?\n/).slice(1);
+            var mapData = [];
+
+            // 1. 先加入居住地 (確保台灣永遠是 Home 狀態，即使 CSV 沒寫)
+            // 如果 CSV 裡也有 TW，下面的迴圈會覆蓋這個設定，但狀態判斷會優先保留 Home 邏輯
+            mapData.push({
+                id: HOME_ID,
+                status: "home",
+                url: "" // 您可以在此設定台灣的預設連結
+            });
+
+            // 2. 處理 CSV 資料
+            rows.forEach(function(row) {
+                var cols = row.split(",");
+                // 確保該行有資料
+                if (cols.length >= 1) {
+                    var countryCode = cols[0].trim(); // 第一欄：Country_Code
+                    var notionLink = cols[1] ? cols[1].trim() : ""; // 第二欄：Notion_Link
+
+                    if (countryCode) {
+                        // 判斷狀態
+                        var currentStatus = "visited";
+                        if (countryCode === HOME_ID) {
+                            currentStatus = "home";
+                        }
+
+                        mapData.push({
+                            id: countryCode,
+                            status: currentStatus,
+                            url: notionLink
+                        });
+                    }
+                }
+            });
+
+            // 將資料注入地圖
+            polygonSeries.data.setAll(mapData);
+            console.log("地圖資料載入完成", mapData);
+        })
+        .catch(error => {
+            console.error("讀取 Google Sheet 失敗:", error);
+            // 本地測試時如果是 file:// 協議可能會被瀏覽器擋下 CORS
+            if (window.location.protocol === 'file:') {
+                alert("錯誤：無法讀取 CSV。\n瀏覽器安全性限制無法直接讀取本地檔案的外部連結。\n請使用 VSCode 的 'Live Server' 套件來開啟此網頁。");
+            }
+        });
+
+    // =========================================================
+    // 6. 控制項 (Controls)
+    // =========================================================
+    
+    // 縮放控制項
+    var zoomControl = chart.set("zoomControl", am5map.ZoomControl.new(root, {}));
+    var homeButton = zoomControl.homeButton;
+    homeButton.set("visible", true);
+
+    // Home 按鈕功能：回到台灣並縮放至全景
+    homeButton.events.on("click", function() {
+        chart.zoomToGeoPoint({ latitude: 23.5, longitude: 121 }, 1, true);
+    });
+
+    // 初始動畫
+    chart.appear(1000, 100);
+});
 </script>
 
 </body>
